@@ -8,7 +8,7 @@ import pandas as pd
 
 # === CONFIGURATION ===
 PAIR = "XAU/USD"
-API_KEY = "YOUR_API_KEY_HERE"  # from financialmodelingprep.com
+API_KEY = "nsfStQOyx0wc8YAbUdsELJ0u2o7wBabE"  # from financialmodelingprep.com
 
 # === TELEGRAM ===
 BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
