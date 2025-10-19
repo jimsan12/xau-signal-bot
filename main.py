@@ -10,69 +10,89 @@ bot = telebot.TeleBot(BOT_TOKEN)
 
 # --- FinancialModelingPrep setup ---
 API_KEY = "nsfStQOyx0wc8YAbUdsELJ0u2o7wBabE"
-API_URL = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={API_KEY}"
 
-# --- File to save crash logs ---
-LOG_FILE = "bot_error_log.txt"
-
-# --- Helper: log errors to file ---
-def log_error(message):
-    with open(LOG_FILE, "a") as f:
-        f.write(f"{datetime.now()} - {message}\n")
-
-# --- Function to fetch and analyze XAU/USD data ---
-def check_market_for_signals():
+# --- Helper: Get current price ---
+def get_price(symbol="XAU/USD"):
     try:
-        response = requests.get(API_URL)
-        data = response.json()
+        url = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={API_KEY}"
+        data = requests.get(url, timeout=10).json()
+        gold = next((item for item in data if item["symbol"] == symbol), None)
+        return gold["price"] if gold else None
+    except:
+        return None
 
-        # Find XAU/USD pair
-        gold_data = next((item for item in data if item["symbol"] == "XAU/USD"), None)
-        if not gold_data:
-            bot.send_message(CHAT_ID, "⚠️ XAU/USD data not found.")
-            return
+# --- Get RSI and EMA Data ---
+def get_signal():
+    try:
+        rsi_5 = requests.get(f"https://financialmodelingprep.com/api/v3/technical_indicator/5min/XAUUSD?period=14&type=rsi&apikey={API_KEY}", timeout=10).json()
+        rsi_15 = requests.get(f"https://financialmodelingprep.com/api/v3/technical_indicator/15min/XAUUSD?period=14&type=rsi&apikey={API_KEY}", timeout=10).json()
+        ema_5 = requests.get(f"https://financialmodelingprep.com/api/v3/technical_indicator/5min/XAUUSD?period=20&type=ema&apikey={API_KEY}", timeout=10).json()
 
-        price = gold_data["price"]
-        change = gold_data.get("changesPercentage", 0)
+        if not rsi_5 or not rsi_15 or not ema_5:
+            return None
 
-        # --- Example logic for strong signal ---
-        if change > 0.35:
-            # Strong upward momentum
-            entry = round(price, 2)
-            tp = round(entry + 3.00, 2)
-            sl = round(entry - 2.00, 2)
-            bot.send_message(CHAT_ID, f"📈 STRONG BUY XAU/USD\nEntry: {entry}\nTP: {tp}\nSL: {sl}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        elif change < -0.35:
-            # Strong downward momentum
-            entry = round(price, 2)
-            tp = round(entry - 3.00, 2)
-            sl = round(entry + 2.00, 2)
-            bot.send_message(CHAT_ID, f"📉 STRONG SELL XAU/USD\nEntry: {entry}\nTP: {tp}\nSL: {sl}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        else:
-            print("No strong signal found at this time.")
+        rsi5 = float(rsi_5[-1]["rsi"])
+        rsi15 = float(rsi_15[-1]["rsi"])
+        ema20 = float(ema_5[-1]["ema"])
+        price = get_price()
 
-    except Exception as e:
-        log_error(f"Signal check failed: {e}")
-        bot.send_message(CHAT_ID, f"⚠️ Error while checking market: {e}")
+        if not price:
+            return None
 
-# --- On startup ---
-bot.send_message(CHAT_ID, "✅ Bot deployed successfully and is now active. Scanning XAU/USD market...")
+        # --- STRONG BUY ---
+        if rsi5 < 30 and rsi15 < 30 and price > ema20:
+            tp = round(price + 3, 2)
+            sl = round(price - 2, 2)
+            return f"📈 STRONG BUY XAU/USD\nTP: {tp}\nSL: {sl}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
 
-# --- Main loop ---
+        # --- STRONG SELL ---
+        elif rsi5 > 70 and rsi15 > 70 and price < ema20:
+            tp = round(price - 3, 2)
+            sl = round(price + 2, 2)
+            return f"📉 STRONG SELL XAU/USD\nTP: {tp}\nSL: {sl}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+
+        return None
+    except:
+        return None
+
+# --- Check if market is open (Mon–Fri) ---
+def market_open():
+    weekday = datetime.utcnow().weekday()  # Monday = 0, Sunday = 6
+    return weekday < 5
+
+# --- Send startup message ---
+bot.send_message(CHAT_ID, "🤖 Bot connected successfully ✅")
+bot.send_message(CHAT_ID, "🔍 Scanning XAU/USD every 5 minutes (Mon–Fri only)...")
+
+# --- Continuous scanning loop ---
+counter = 0
+market_closed = False  # Track market close status
+
 while True:
     try:
-        # Notify active status
-        bot.send_message(CHAT_ID, "🟢 Bot Active — scanning XAU/USD market for strong signals...")
+        if not market_open():
+            if not market_closed:
+                bot.send_message(CHAT_ID, f"⏸ Market closed — Bot sleeping until Monday. ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+                market_closed = True
+            time.sleep(3600)  # Check every hour during weekends
+            continue
+        else:
+            if market_closed:
+                bot.send_message(CHAT_ID, f"✅ Market reopened — Bot resumed scanning. ({datetime.now().strftime('%Y-%m-%d %H:%M:%S')})")
+                market_closed = False
 
-        # Perform analysis
-        check_market_for_signals()
+        signal = get_signal()
+        if signal:
+            bot.send_message(CHAT_ID, signal)
+            counter = 0
+        else:
+            counter += 1
+            if counter >= 6:
+                bot.send_message(CHAT_ID, f"ℹ️ No strong signal yet. Bot still active — {datetime.now().strftime('%H:%M:%S')}")
+                counter = 0
 
+        time.sleep(300)  # Wait 5 minutes
     except Exception as e:
-        error_message = f"⚠️ Bot Error Detected: {e}"
-        log_error(error_message)
-        bot.send_message(CHAT_ID, f"{error_message}\nAttempting auto-restart...")
+        bot.send_message(CHAT_ID, f"⚠️ Bot error: {e}\nAuto-restarting...")
         time.sleep(10)
-        continue  # auto-restart
-
-    # Wait 5 minutes before next scan
-    time.sleep(300)
+        continue
