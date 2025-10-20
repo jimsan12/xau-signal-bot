@@ -4,8 +4,8 @@ import telebot
 from datetime import datetime
 
 # --- Telegram setup ---
-BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
-CHAT_ID = "YOUR_CHAT_ID"
+BOT_TOKEN = "7728743162:AAGYJxW59keeshlgdrM0bBz8pCa0kEuJPbc"
+CHAT_ID = "8127758686"
 bot = telebot.TeleBot(BOT_TOKEN)
 
 # --- FinancialModelingPrep setup ---
