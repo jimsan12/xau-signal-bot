@@ -1,60 +1,68 @@
-import time
 import requests
-import telebot
+import time
+import pytz
 from datetime import datetime
 
-# --- Telegram setup ---
+# === CONFIG ===
+API_KEY = "nsfStQOyx0wc8YAbUdsELJ0u2o7wBabE"  # FinancialModelingPrep key
 BOT_TOKEN = "7728743162:AAGYJxW59keeshlgdrM0bBz8pCa0kEuJPbc"
 CHAT_ID = "8127758686"
-bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- FinancialModelingPrep setup ---
-API_KEY = "nsfStQOyx0wc8YAbUdsELJ0u2o7wBabE"
-API_URL = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={API_KEY}"
-
-# --- Startup ---
-bot.send_message(CHAT_ID, "🤖 Gold Signal Bot (Debug Mode) started successfully!\n🔍 Scanning XAU/USD every 5 minutes...")
-
-def check_market_debug():
+def send_telegram_message(message):
+    """Send message to Telegram"""
     try:
-        response = requests.get(API_URL)
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+        requests.post(url, data={"chat_id": CHAT_ID, "text": message})
+    except Exception as e:
+        print(f"⚠️ Telegram error: {e}")
+
+def fetch_gold_data():
+    """Fetch XAU/USD data safely"""
+    url = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={API_KEY}"
+    try:
+        response = requests.get(url, timeout=10)
         data = response.json()
 
-        gold_data = next((item for item in data if item["symbol"] == "XAU/USD"), None)
+        # ✅ Fix for 'string indices' error
+        gold_data = None
+        if isinstance(data, list):
+            for item in data:
+                if isinstance(item, dict) and item.get("symbol") == "XAU/USD":
+                    gold_data = item
+                    break
+
         if not gold_data:
-            bot.send_message(CHAT_ID, "⚠️ XAU/USD data not found.")
-            return
+            raise ValueError("No XAU/USD data found")
 
-        price = gold_data["price"]
-        change = gold_data.get("changesPercentage", 0)
-
-        # Dummy RSI/EMA values for debugging (since FMP doesn’t give them directly)
-        # We'll simulate values that change slightly each time
-        rsi = 50 + (change * 10)
-        ema20 = round(price - (change * 2), 2)
-
-        # Send live data preview
-        msg = (
-            f"📊 *Live Market Check (Debug)*\n"
-            f"Symbol: XAU/USD\n"
-            f"Price: {price}\n"
-            f"RSI: {rsi:.2f}\n"
-            f"EMA20: {ema20}\n"
-            f"Change%: {change:.3f}\n"
-            f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-        )
-        bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-
-        # Quick signal example
-        if change > 0.35:
-            bot.send_message(CHAT_ID, f"📈 BUY detected — TP: {round(price + 3,2)} | SL: {round(price - 2,2)}")
-        elif change < -0.35:
-            bot.send_message(CHAT_ID, f"📉 SELL detected — TP: {round(price - 3,2)} | SL: {round(price + 2,2)}")
+        return gold_data
 
     except Exception as e:
-        bot.send_message(CHAT_ID, f"⚠️ Error in debug scan: {e}")
+        send_telegram_message(f"⚠️ Error fetching data: {e}")
+        print(f"⚠️ Error fetching data: {e}")
+        return None
 
-# --- Main loop ---
-while True:
-    check_market_debug()
-    time.sleep(300)  # wait 5 minutes
+def main():
+    """Main loop"""
+    print("🤖 Debug bot started...")
+    send_telegram_message("✅ Debug bot started successfully!")
+
+    while True:
+        try:
+            data = fetch_gold_data()
+            if data:
+                price = data.get("price")
+                timestamp = datetime.now(pytz.timezone("Africa/Lagos")).strftime("%Y-%m-%d %H:%M:%S")
+                message = f"💰 Gold Price: {price}\n🕒 Time: {timestamp}"
+                send_telegram_message(message)
+                print(message)
+            else:
+                print("⚠️ No valid data found this round.")
+
+        except Exception as e:
+            send_telegram_message(f"⚠️ Error in debug scan: {e}")
+            print(f"⚠️ Error in debug scan: {e}")
+
+        time.sleep(300)  # Run every 5 minutes
+
+if __name__ == "__main__":
+    main()
