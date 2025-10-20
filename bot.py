@@ -3,66 +3,58 @@ import requests
 import telebot
 from datetime import datetime
 
-# --- Telegram Setup ---
-BOT_TOKEN = "7728743162:AAGYJxW59keeshlgdrM0bBz8pCa0kEuJPbc"
-CHAT_ID = "8127758686"
+# --- Telegram setup ---
+BOT_TOKEN = "YOUR_TELEGRAM_BOT_TOKEN"
+CHAT_ID = "YOUR_CHAT_ID"
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# --- Financial Modeling Prep API ---
+# --- FinancialModelingPrep setup ---
 API_KEY = "nsfStQOyx0wc8YAbUdsELJ0u2o7wBabE"
+API_URL = f"https://financialmodelingprep.com/api/v3/quotes/forex?apikey={API_KEY}"
 
-# --- Fetch XAU/USD data for a given timeframe ---
-def fetch_data(interval):
-    url = f"https://financialmodelingprep.com/api/v3/technical_indicator/1min/XAUUSD?period=14&type=rsi&apikey={API_KEY}"
+# --- Startup ---
+bot.send_message(CHAT_ID, "🤖 Gold Signal Bot (Debug Mode) started successfully!\n🔍 Scanning XAU/USD every 5 minutes...")
+
+def check_market_debug():
     try:
-        rsi_data = requests.get(url).json()
-        if not rsi_data:
-            return None
-        return rsi_data[0]["rsi"]
-    except:
-        return None
+        response = requests.get(API_URL)
+        data = response.json()
 
-# --- Main Signal Checker ---
-def check_signals():
-    rsi_15m = fetch_data("15min")
-    rsi_1h = fetch_data("1hour")
+        gold_data = next((item for item in data if item["symbol"] == "XAU/USD"), None)
+        if not gold_data:
+            bot.send_message(CHAT_ID, "⚠️ XAU/USD data not found.")
+            return
 
-    if rsi_15m is None or rsi_1h is None:
-        return None
+        price = gold_data["price"]
+        change = gold_data.get("changesPercentage", 0)
 
-    # --- Example logic ---
-    if rsi_15m < 30 and rsi_1h < 30:
-        # Strong Buy setup
-        entry = 2450.00
-        tp = entry + 3.50
-        sl = entry - 2.00
-        return f"📈 STRONG BUY XAU/USD\nTP: {tp}\nSL: {sl}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    elif rsi_15m > 70 and rsi_1h > 70:
-        # Strong Sell setup
-        entry = 2450.00
-        tp = entry - 3.50
-        sl = entry + 2.00
-        return f"📉 STRONG SELL XAU/USD\nTP: {tp}\nSL: {sl}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-    else:
-        return None
+        # Dummy RSI/EMA values for debugging (since FMP doesn’t give them directly)
+        # We'll simulate values that change slightly each time
+        rsi = 50 + (change * 10)
+        ema20 = round(price - (change * 2), 2)
 
-# --- Notify startup ---
-bot.send_message(CHAT_ID, "🤖 Gold Signal Bot Connected ✅\n🔍 Scanning XAU/USD every 5 minutes...")
+        # Send live data preview
+        msg = (
+            f"📊 *Live Market Check (Debug)*\n"
+            f"Symbol: XAU/USD\n"
+            f"Price: {price}\n"
+            f"RSI: {rsi:.2f}\n"
+            f"EMA20: {ema20}\n"
+            f"Change%: {change:.3f}\n"
+            f"⏰ {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+        )
+        bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
 
-last_no_signal = 0
-
-while True:
-    try:
-        signal = check_signals()
-        now = time.time()
-
-        if signal:
-            bot.send_message(CHAT_ID, signal)
-        elif now - last_no_signal >= 3600:
-            bot.send_message(CHAT_ID, "🔸 No strong signal found in the last hour.")
-            last_no_signal = now
+        # Quick signal example
+        if change > 0.35:
+            bot.send_message(CHAT_ID, f"📈 BUY detected — TP: {round(price + 3,2)} | SL: {round(price - 2,2)}")
+        elif change < -0.35:
+            bot.send_message(CHAT_ID, f"📉 SELL detected — TP: {round(price - 3,2)} | SL: {round(price + 2,2)}")
 
     except Exception as e:
-        bot.send_message(CHAT_ID, f"⚠️ Bot Error: {e}")
+        bot.send_message(CHAT_ID, f"⚠️ Error in debug scan: {e}")
 
-    time.sleep(300)  # Wait 5 minutes
+# --- Main loop ---
+while True:
+    check_market_debug()
+    time.sleep(300)  # wait 5 minutes
