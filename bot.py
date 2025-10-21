@@ -73,17 +73,17 @@ def analyze():
         signal = f"🔴 SELL Signal for {SYMBOL}\n💰 Price: {price}\n🎯 TP: {price-2}\n⛔ SL: {price+1}\n⏰ {datetime.datetime.utcnow()} UTC"
 
     if signal:
-        bot.send_message(chat_id="YOUR_TELEGRAM_CHAT_ID", text=signal)
+        bot.send_message(chat_id="8127758686", text=signal)
     else:
         print("No signal this round")
 
 # ========================
 # MAIN LOOP
 # ========================
-bot.send_message(chat_id="YOUR_TELEGRAM_CHAT_ID", text="🤖 Gold Signal Bot started successfully ✅")
+bot.send_message(chat_id="8127758686", text="🤖 Gold Signal Bot started successfully ✅")
 while True:
     try:
         analyze()
     except Exception as e:
-        bot.send_message(chat_id="YOUR_TELEGRAM_CHAT_ID", text=f"⚠️ Error: {e}")
+        bot.send_message(chat_id="8127758686", text=f"⚠️ Error: {e}")
     time.sleep(300)  # 5 minutes
