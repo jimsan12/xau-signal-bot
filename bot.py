@@ -1,68 +1,89 @@
-import time
 import requests
+import time
+import datetime
 import telebot
-from datetime import datetime
 
+# ========================
+# CONFIGURATION
+# ========================
 BOT_TOKEN = "7728743162:AAGYJxW59keeshlgdrM0bBz8pCa0kEuJPbc"
-CHAT_ID = "8127758686"
+API_KEY = "29d871f9d28f4642b7a43496bf1393ee"
+SYMBOL = "XAU/USD"
+INTERVAL_1 = "15min"
+INTERVAL_2 = "1h"
+
 bot = telebot.TeleBot(BOT_TOKEN)
 
-@bot.message_handler(commands=['start'])
-def start_command(message):
-    bot.reply_to(message, "🤖 Gold Signal Bot is active ✅")
+# ========================
+# FUNCTIONS
+# ========================
 
-def get_prices(interval):
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/XAUUSD=X?interval={interval}&range=1d"
-    try:
-        r = requests.get(url, timeout=10)
-        if r.status_code != 200:
-            print(f"Yahoo API error ({r.status_code})")
-            return None
-        data = r.json()
-        return data["chart"]["result"][0]["indicators"]["quote"][0]["close"]
-    except Exception as e:
-        print(f"Price fetch failed: {e}")
-        return None
+def get_price_data(symbol, interval):
+    """Fetch latest candle data from Twelve Data"""
+    url = f"https://api.twelvedata.com/time_series?symbol={symbol}&interval={interval}&apikey={API_KEY}&outputsize=5"
+    r = requests.get(url)
+    data = r.json()
+    if "values" not in data:
+        raise ValueError(str(data))
+    return data["values"]
 
-def calc_rsi(prices):
-    if not prices or len(prices) < 15:
-        return 50
-    deltas = [prices[i+1] - prices[i] for i in range(len(prices)-1)]
-    gain = sum(x for x in deltas[-14:] if x > 0) / 14
-    loss = -sum(x for x in deltas[-14:] if x < 0) / 14
-    if loss == 0: return 100
-    rs = gain / loss
+def rsi_calc(data):
+    """Simple RSI calculator"""
+    closes = [float(x["close"]) for x in data[::-1]]
+    gains = []
+    losses = []
+    for i in range(1, len(closes)):
+        diff = closes[i] - closes[i - 1]
+        if diff >= 0:
+            gains.append(diff)
+            losses.append(0)
+        else:
+            gains.append(0)
+            losses.append(abs(diff))
+    avg_gain = sum(gains) / len(gains)
+    avg_loss = sum(losses) / len(losses)
+    if avg_loss == 0:
+        return 100
+    rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def check_signals():
-    try:
-        p5 = get_prices("5m")
-        p1 = get_prices("1h")
-        if not p5 or not p1:
-            bot.send_message(CHAT_ID, "⚠️ Data unavailable (Yahoo delay). Retrying in 5 mins...")
-            return
+def ema_calc(data, period=20):
+    """EMA calculation"""
+    closes = [float(x["close"]) for x in data[::-1]]
+    k = 2 / (period + 1)
+    ema = closes[0]
+    for price in closes[1:]:
+        ema = price * k + ema * (1 - k)
+    return ema
 
-        rsi5, rsi1 = calc_rsi(p5[-20:]), calc_rsi(p1[-20:])
-        price = round(p5[-1], 2)
+def analyze():
+    """Analyze dual timeframe and send signal"""
+    data15 = get_price_data(SYMBOL, INTERVAL_1)
+    data1h = get_price_data(SYMBOL, INTERVAL_2)
 
-        if rsi5 < 30 and rsi1 < 30:
-            bot.send_message(CHAT_ID, f"📈 BUY XAU/USD\nEntry: {price}\nTP: {price + 3:.2f}\nSL: {price - 2:.2f}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        elif rsi5 > 70 and rsi1 > 70:
-            bot.send_message(CHAT_ID, f"📉 SELL XAU/USD\nEntry: {price}\nTP: {price - 3:.2f}\nSL: {price + 2:.2f}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    rsi15 = rsi_calc(data15)
+    rsi1h = rsi_calc(data1h)
+    ema20 = ema_calc(data15)
+    price = float(data15[0]["close"])
 
-    except Exception as e:
-        bot.send_message(CHAT_ID, f"⚠️ Error checking market: {e}")
+    signal = None
+    if rsi15 < 30 and rsi1h < 30 and price > ema20:
+        signal = f"🟢 BUY Signal for {SYMBOL}\n💰 Price: {price}\n🎯 TP: {price+2}\n⛔ SL: {price-1}\n⏰ {datetime.datetime.utcnow()} UTC"
+    elif rsi15 > 70 and rsi1h > 70 and price < ema20:
+        signal = f"🔴 SELL Signal for {SYMBOL}\n💰 Price: {price}\n🎯 TP: {price-2}\n⛔ SL: {price+1}\n⏰ {datetime.datetime.utcnow()} UTC"
 
-bot.send_message(CHAT_ID, "✅ Bot started successfully! Scanning every 5 minutes...\n⏰ Sending active updates every 30 minutes...")
+    if signal:
+        bot.send_message(chat_id="YOUR_TELEGRAM_CHAT_ID", text=signal)
+    else:
+        print("No signal this round")
 
-last_update = time.time()
-
+# ========================
+# MAIN LOOP
+# ========================
+bot.send_message(chat_id="YOUR_TELEGRAM_CHAT_ID", text="🤖 Gold Signal Bot started successfully ✅")
 while True:
-    check_signals()
-
-    # Every 30 minutes → confirmation message
-    if time.time() - last_update >= 1800:
-        bot.send_message(CHAT_ID, f"✅ Bot still active — {datetime.now().strftime('%H:%M:%S')}")
-        last_update = time.time()
-
-    time.sleep(300)
+    try:
+        analyze()
+    except Exception as e:
+        bot.send_message(chat_id="YOUR_TELEGRAM_CHAT_ID", text=f"⚠️ Error: {e}")
+    time.sleep(300)  # 5 minutes
