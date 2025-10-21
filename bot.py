@@ -13,9 +13,20 @@ def start_command(message):
 
 def get_prices(interval):
     url = f"https://query1.finance.yahoo.com/v8/finance/chart/XAUUSD=X?interval={interval}&range=1d"
-    return requests.get(url).json()["chart"]["result"][0]["indicators"]["quote"][0]["close"]
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            print(f"Yahoo API error ({r.status_code})")
+            return None
+        data = r.json()
+        return data["chart"]["result"][0]["indicators"]["quote"][0]["close"]
+    except Exception as e:
+        print(f"Price fetch failed: {e}")
+        return None
 
 def calc_rsi(prices):
+    if not prices or len(prices) < 15:
+        return 50
     deltas = [prices[i+1] - prices[i] for i in range(len(prices)-1)]
     gain = sum(x for x in deltas[-14:] if x > 0) / 14
     loss = -sum(x for x in deltas[-14:] if x < 0) / 14
@@ -25,7 +36,12 @@ def calc_rsi(prices):
 
 def check_signals():
     try:
-        p5, p1 = get_prices("5m"), get_prices("1h")
+        p5 = get_prices("5m")
+        p1 = get_prices("1h")
+        if not p5 or not p1:
+            bot.send_message(CHAT_ID, "⚠️ Data unavailable (Yahoo delay). Retrying in 5 mins...")
+            return
+
         rsi5, rsi1 = calc_rsi(p5[-20:]), calc_rsi(p1[-20:])
         price = round(p5[-1], 2)
 
@@ -35,10 +51,18 @@ def check_signals():
             bot.send_message(CHAT_ID, f"📉 SELL XAU/USD\nEntry: {price}\nTP: {price - 3:.2f}\nSL: {price + 2:.2f}\n🕒 {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
     except Exception as e:
-        bot.send_message(CHAT_ID, f"⚠️ Error: {e}")
+        bot.send_message(CHAT_ID, f"⚠️ Error checking market: {e}")
 
-bot.send_message(CHAT_ID, "✅ Bot started successfully! Scanning every 5 minutes...")
+bot.send_message(CHAT_ID, "✅ Bot started successfully! Scanning every 5 minutes...\n⏰ Sending active updates every 30 minutes...")
+
+last_update = time.time()
 
 while True:
     check_signals()
+
+    # Every 30 minutes → confirmation message
+    if time.time() - last_update >= 1800:
+        bot.send_message(CHAT_ID, f"✅ Bot still active — {datetime.now().strftime('%H:%M:%S')}")
+        last_update = time.time()
+
     time.sleep(300)
